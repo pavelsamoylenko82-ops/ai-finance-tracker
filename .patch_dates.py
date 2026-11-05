@@ -1,0 +1,29 @@
+import io
+p = 'db.py'
+s = io.open(p, encoding='utf-8', newline='').read()
+
+def rep(old, new):
+    global s
+    assert s.count(old) == 1, ('MISS', s.count(old), old[:70])
+    s = s.replace(old, new)
+    print('ok', old.splitlines()[0][:60])
+
+rep(
+'from datetime import date',
+'from datetime import date, datetime'
+)
+
+rep(
+'''def looks_like_fuel(description: str) -> bool:''',
+'''_DATE_INPUT_FORMATS: Tuple[str, ...] = (\n    \"%Y-%m-%d\",\n    \"%d.%m.%Y\",\n    \"%d.%m.%y\",\n    \"%d/%m/%Y\",\n    \"%d/%m/%y\",\n    \"%d-%m-%Y\",\n    \"%d-%m-%y\",\n    \"%Y/%m/%d\",\n    \"%Y.%m.%d\",\n)\n\n\ndef normalize_tx_date(raw: Any, default: str = \"\") -> str:\n    \"\"\"Приводит любую дату к ISO YYYY-MM-DD для корректного сравнения в SQL.\n\n    Понимает ДД.ММ.ГГГГ, ДД.ММ.ГГ, ДД/ММ/ГГГГ, YYYY-MM-DD и дату-время.\n    На нераспознанном мусоре возвращает default (обычно сегодня), а не падает.\n    \"\"\"\n    text = str(raw or \"\").strip()\n    if not text:\n        return default\n\n    # Отрезаем возможное время: \"2025-05-01 12:30:00\" / \"01.05.2025T10:00\"\n    head = text.replace(\"T\", \" \").split(\" \", 1)[0].strip()\n    if len(head) < 6:\n        return default\n\n    for fmt in _DATE_INPUT_FORMATS:\n        try:\n            return datetime.strptime(head, fmt).date().isoformat()\n        except ValueError:\n            continue\n\n    return default\n\n\ndef looks_like_fuel(description: str) -> bool:''')
+
+rep(
+'''        tx_date = (item.get(\"tx_date\") or \"\").strip() or today_str\n        tx_type = item[\"tx_type\"]''',
+'''        tx_date = normalize_tx_date(item.get(\"tx_date\"), today_str)\n        tx_type = item[\"tx_type\"]''')
+
+rep(
+'''        tx_date = (item.get(\"tx_date\") or \"\").strip() or today_str\n        norm = dict(item)''',
+'''        tx_date = normalize_tx_date(item.get(\"tx_date\"), today_str)\n        norm = dict(item)''')
+
+io.open(p, 'w', encoding='utf-8', newline='').write(s)
+print('dates patched')
