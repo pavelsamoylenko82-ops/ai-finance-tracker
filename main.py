@@ -98,6 +98,10 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="📥 Экспорт Excel"),
             ],
             [
+                KeyboardButton(text="🤖 ИИ"),
+                KeyboardButton(text="🍷 Алкоголь"),
+            ],
+            [
                 KeyboardButton(text="💾 Бэкап БД"),
                 KeyboardButton(text="🔄 Профиль"),
             ],
@@ -108,6 +112,16 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
 
 class StatsPeriodForm(StatesGroup):
     waiting_period = State()
+
+
+class QuickCategoryForm(StatesGroup):
+    waiting_details = State()
+
+
+QUICK_CATEGORY_BUTTONS = {
+    "🤖 ИИ": "ИИ",
+    "🍷 Алкоголь": "Алкоголь",
+}
 
 
 # --- Ручной период статистики ---------------------------------------------
@@ -127,6 +141,8 @@ MAIN_MENU_LABELS = frozenset(
         "📥 Экспорт Excel",
         "💾 Бэкап БД",
         "🔄 Профиль",
+        "🤖 ИИ",
+        "🍷 Алкоголь",
     }
 )
 
@@ -1179,6 +1195,61 @@ async def handle_voice(
     except Exception as exc:
         logger.exception("Ошибка при разборе голосового сообщения")
         await status_msg.edit_text(f"❌ Ошибка разбора аудио: <code>{esc(exc)}</code>")
+
+
+
+
+@router.message(F.text.in_(QUICK_CATEGORY_BUTTONS))
+async def cmd_quick_category(message: Message, state: FSMContext) -> None:
+    category = QUICK_CATEGORY_BUTTONS[message.text]
+    await state.set_state(QuickCategoryForm.waiting_details)
+    await state.update_data(quick_category=category)
+    await message.answer(
+        f"<b>{esc(category)}</b>: отправь сумму и описание одним сообщением. "
+        f"Например: <code>500 подписка ChatGPT</code> или <code>25 пиво</code>."
+    )
+
+
+@router.message(QuickCategoryForm.waiting_details, F.text)
+async def handle_quick_category_input(
+    message: Message,
+    bot: Bot,
+    state: FSMContext,
+    workspace_id: int,
+    workspace_mode: str,
+    author_name: str,
+) -> None:
+    if message.text.strip().lower() in CANCEL_WORDS:
+        await state.clear()
+        await message.answer("Ок, отменил. Можно вводить трату как обычно.")
+        return
+
+    data = await state.get_data()
+    category = data.get("quick_category") or "Прочие расходы"
+    await state.clear()
+    status_msg = await message.answer("⚡ <i>Считаю...</i>")
+    try:
+        parsed = await parse_text_message(
+            f"{category} {message.text}",
+            on_retry=make_retry_notifier(status_msg, "Разбираю текст..."),
+            actor_id=message.from_user.id,
+            actor_name=author_name,
+        )
+        for tx in parsed.transactions:
+            if tx.tx_type == "expense":
+                tx.category = category
+        await status_msg.delete()
+        await process_parsed_batch(
+            message,
+            bot,
+            parsed,
+            workspace_id=workspace_id,
+            workspace_mode=workspace_mode,
+            author_name=author_name,
+        )
+    except Exception as exc:
+        logger.exception("Ошибка быстрого ввода категории")
+        await status_msg.edit_text(f"❌ Ошибка обращения к ИИ: <code>{esc(exc)}</code>")
 
 
 @router.message(F.text)
